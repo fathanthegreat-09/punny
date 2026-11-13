@@ -1,17 +1,19 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const db = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Ensure upload & data directories exist
 const uploadDir = path.join(__dirname, 'uploads');
@@ -42,15 +44,15 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15MB limit
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
   fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp/;
+    const allowed = /jpeg|jpg|png|gif|webp|mp4|webm|mov|mkv/;
     const extName = allowed.test(path.extname(file.originalname).toLowerCase());
     const mimeType = allowed.test(file.mimetype);
     if (extName || mimeType) {
       return cb(null, true);
     }
-    cb(new Error('Only image files (JPEG, PNG, GIF, WebP) are allowed!'));
+    cb(new Error('File format not supported!'));
   }
 });
 
@@ -61,6 +63,7 @@ function getInitialSeedPosts() {
       id: 'pin-1',
       title: 'Neon Tokyo Aesthetic',
       imageUrl: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=800&q=80',
+      imageUrls: ['https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=800&q=80'],
       author: 'Fathan',
       likes: ['user1', 'user2'],
       likeCount: 2,
@@ -70,6 +73,7 @@ function getInitialSeedPosts() {
       id: 'pin-2',
       title: 'Minimalist Workspace Setup',
       imageUrl: 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=800&q=80',
+      imageUrls: ['https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=800&q=80'],
       author: 'Fathan',
       likes: ['user1'],
       likeCount: 1,
@@ -79,6 +83,7 @@ function getInitialSeedPosts() {
       id: 'pin-3',
       title: 'Mountain Sunset In Alps',
       imageUrl: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80',
+      imageUrls: ['https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80'],
       author: 'Arona',
       likes: ['user3', 'user4', 'user5'],
       likeCount: 3,
@@ -88,6 +93,7 @@ function getInitialSeedPosts() {
       id: 'pin-4',
       title: 'Matcha Latte Art & Cafe Vibes',
       imageUrl: 'https://images.unsplash.com/photo-1536256263959-770b48d82b0a?auto=format&fit=crop&w=800&q=80',
+      imageUrls: ['https://images.unsplash.com/photo-1536256263959-770b48d82b0a?auto=format&fit=crop&w=800&q=80'],
       author: 'Yuuka',
       likes: ['user2', 'user6'],
       likeCount: 2,
@@ -97,6 +103,7 @@ function getInitialSeedPosts() {
       id: 'pin-5',
       title: 'Cozy Reading Nook & Plants',
       imageUrl: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=800&q=80',
+      imageUrls: ['https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=800&q=80'],
       author: 'Fathan',
       likes: ['user1', 'user3', 'user4', 'user7'],
       likeCount: 4,
@@ -106,6 +113,7 @@ function getInitialSeedPosts() {
       id: 'pin-6',
       title: 'Cyberpunk City Street Lights',
       imageUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80',
+      imageUrls: ['https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=800&q=80'],
       author: 'Sensei',
       likes: ['user1'],
       likeCount: 1,
@@ -114,257 +122,460 @@ function getInitialSeedPosts() {
   ];
 }
 
-// Read posts from JSON file helper
-function readPosts() {
+// Initial seed helper for Aiven Database (populates default posts if database is empty)
+async function seedInitialDatabaseIfEmpty() {
   try {
-    if (!fs.existsSync(postsFilePath)) {
-      const initial = getInitialSeedPosts();
-      fs.writeFileSync(postsFilePath, JSON.stringify(initial, null, 2), 'utf-8');
-      return initial;
+    const [rows] = await db.query('SELECT COUNT(*) as count FROM posts');
+    if (rows[0].count === 0) {
+      let initialPosts = [];
+      if (fs.existsSync(postsFilePath)) {
+        try {
+          const fileData = fs.readFileSync(postsFilePath, 'utf-8');
+          initialPosts = JSON.parse(fileData);
+        } catch (_) {}
+      }
+      if (!initialPosts.length) {
+        initialPosts = getInitialSeedPosts();
+      }
+
+      for (const p of initialPosts) {
+        await db.query(
+          `INSERT INTO posts (id, title, imageUrl, imageUrls, videoUrl, author, likes, likeCount, description, category, link, comments, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            p.id,
+            p.title || 'Untitled',
+            p.imageUrl || '',
+            JSON.stringify(p.imageUrls || (p.imageUrl ? [p.imageUrl] : [])),
+            p.videoUrl || null,
+            p.author || 'Anonymous',
+            JSON.stringify(p.likes || []),
+            Array.isArray(p.likes) ? p.likes.length : (p.likeCount || 0),
+            p.description || null,
+            p.category || 'Aesthetic',
+            p.link || null,
+            JSON.stringify(p.comments || []),
+            p.createdAt ? new Date(p.createdAt) : new Date()
+          ]
+        );
+      }
+      console.log(`[Aiven DB] Successfully seeded ${initialPosts.length} initial posts!`);
     }
-    const data = fs.readFileSync(postsFilePath, 'utf-8');
-    return JSON.parse(data);
   } catch (err) {
-    console.error('Error reading posts file, initializing default:', err.message);
-    return getInitialSeedPosts();
+    console.error('[Aiven DB] Error checking/seeding posts table:', err.message);
   }
 }
 
-// Write posts to JSON file helper
-function writePosts(posts) {
-  try {
-    fs.writeFileSync(postsFilePath, JSON.stringify(posts, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error saving posts to file:', err.message);
-  }
-}
+// Run initial seed check
+seedInitialDatabaseIfEmpty();
 
-// In-memory posts initialized from file
-let posts = readPosts();
-
-// Helper to construct full URL for an image
+// Helper to format post from DB row to Flutter API expected format
 function formatPostResponse(post, req) {
   const host = req.get('host') || `localhost:${PORT}`;
   const protocol = req.protocol || 'http';
-  let formattedImageUrl = post.imageUrl;
 
-  if (post.imagePath) {
-    formattedImageUrl = `${protocol}://${host}/uploads/${path.basename(post.imagePath)}`;
+  // Parse JSON columns safely if they come as string
+  const parseJsonField = (val, defaultVal) => {
+    if (!val) return defaultVal;
+    if (typeof val === 'string') {
+      try {
+        return JSON.parse(val);
+      } catch (_) {
+        return defaultVal;
+      }
+    }
+    return val;
+  };
+
+  const parsedImageUrls = parseJsonField(post.imageUrls, []);
+  const parsedLikes = parseJsonField(post.likes, []);
+  const parsedComments = parseJsonField(post.comments, []);
+
+  let formattedImageUrl = post.imageUrl || '';
+  if (formattedImageUrl.startsWith('/uploads/')) {
+    formattedImageUrl = `${protocol}://${host}${formattedImageUrl}`;
   }
 
+  const formattedImageUrls = (parsedImageUrls.length > 0 ? parsedImageUrls : [formattedImageUrl]).map(url => {
+    if (typeof url === 'string' && url.startsWith('/uploads/')) {
+      return `${protocol}://${host}${url}`;
+    }
+    return url;
+  });
+
   return {
-    ...post,
+    id: String(post.id),
+    title: post.title,
     imageUrl: formattedImageUrl,
-    likeCount: Array.isArray(post.likes) ? post.likes.length : (post.likeCount || 0)
+    imageUrls: formattedImageUrls,
+    videoUrl: post.videoUrl || null,
+    author: post.author,
+    likes: parsedLikes,
+    likeCount: parsedLikes.length,
+    description: post.description || null,
+    category: post.category || 'Aesthetic',
+    link: post.link || null,
+    comments: parsedComments,
+    createdAt: post.createdAt ? new Date(post.createdAt).toISOString() : new Date().toISOString()
   };
 }
 
 // ======================== ROUTES ========================
 
 // 1. Health Check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    message: 'Punny Backend is running smoothly',
-    timestamp: new Date().toISOString()
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({
+      status: 'ok',
+      database: 'connected (Aiven MySQL)',
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({
+      status: 'error',
+      database: 'disconnected',
+      error: err.message
+    });
+  }
 });
 
 // 2. GET all posts
-app.get('/api/posts', (req, res) => {
-  const { author, search } = req.query;
-  let filtered = [...posts];
+app.get('/api/posts', async (req, res) => {
+  try {
+    const { author, search } = req.query;
+    let query = 'SELECT * FROM posts';
+    const params = [];
+    const conditions = [];
 
-  if (author) {
-    filtered = filtered.filter(p => p.author.toLowerCase() === author.toLowerCase());
+    if (author) {
+      conditions.push('LOWER(author) = LOWER(?)');
+      params.push(author);
+    }
+
+    if (search) {
+      conditions.push('LOWER(title) LIKE LOWER(?)');
+      params.push(`%${search}%`);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY createdAt DESC';
+
+    const [rows] = await db.query(query, params);
+    const responsePosts = rows.map(p => formatPostResponse(p, req));
+
+    res.json({
+      success: true,
+      total: responsePosts.length,
+      data: responsePosts
+    });
+  } catch (err) {
+    console.error('Error fetching posts:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  if (search) {
-    const s = search.toLowerCase();
-    filtered = filtered.filter(p => p.title.toLowerCase().includes(s));
-  }
-
-  // Sort newest first
-  filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  const responsePosts = filtered.map(p => formatPostResponse(p, req));
-  res.json({
-    success: true,
-    total: responsePosts.length,
-    data: responsePosts
-  });
 });
 
 // 3. GET single post by ID
-app.get('/api/posts/:id', (req, res) => {
-  const post = posts.find(p => p.id === req.params.id);
-  if (!post) {
-    return res.status(404).json({ success: false, message: 'Post not found' });
+app.get('/api/posts/:id', async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+    res.json({ success: true, data: formatPostResponse(rows[0], req) });
+  } catch (err) {
+    console.error('Error fetching post by ID:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
-  res.json({ success: true, data: formatPostResponse(post, req) });
 });
 
 // 4. CREATE new post (CRUD: Create)
-// Supports either multipart file upload OR imageUrl field
-app.post('/api/posts', upload.single('image'), (req, res) => {
-  const { title, author, imageUrl } = req.body;
+app.post('/api/posts', upload.single('image'), async (req, res) => {
+  try {
+    const { title, author, imageUrl, imageUrls, videoUrl, description, category, link } = req.body;
 
-  if (!title || title.trim() === '') {
-    return res.status(400).json({ success: false, message: 'Title is required' });
-  }
+    if (!title || title.trim() === '') {
+      return res.status(400).json({ success: false, message: 'Title is required' });
+    }
 
-  let finalImagePath = null;
-  let finalImageUrl = imageUrl;
+    let finalImageUrl = imageUrl || '';
+    if (req.file) {
+      finalImageUrl = `/uploads/${req.file.filename}`;
+    }
 
-  if (req.file) {
-    finalImagePath = req.file.path;
-  } else if (!imageUrl || imageUrl.trim() === '') {
-    return res.status(400).json({
-      success: false,
-      message: 'Please provide either an image file or an image URL'
+    let resolvedImageUrls = [];
+    if (imageUrls) {
+      if (typeof imageUrls === 'string') {
+        try {
+          resolvedImageUrls = JSON.parse(imageUrls);
+        } catch (_) {
+          resolvedImageUrls = [imageUrls];
+        }
+      } else if (Array.isArray(imageUrls)) {
+        resolvedImageUrls = imageUrls;
+      }
+    }
+    if (resolvedImageUrls.length === 0 && finalImageUrl) {
+      resolvedImageUrls = [finalImageUrl];
+    }
+
+    const newId = 'pin-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+    const newPost = {
+      id: newId,
+      title: title.trim(),
+      imageUrl: finalImageUrl,
+      imageUrls: JSON.stringify(resolvedImageUrls),
+      videoUrl: videoUrl || null,
+      author: (author && author.trim()) ? author.trim() : 'Fathan',
+      likes: JSON.stringify([]),
+      likeCount: 0,
+      description: description || null,
+      category: category || 'Aesthetic',
+      link: link || null,
+      comments: JSON.stringify([]),
+      createdAt: new Date()
+    };
+
+    await db.query(
+      `INSERT INTO posts (id, title, imageUrl, imageUrls, videoUrl, author, likes, likeCount, description, category, link, comments, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        newPost.id,
+        newPost.title,
+        newPost.imageUrl,
+        newPost.imageUrls,
+        newPost.videoUrl,
+        newPost.author,
+        newPost.likes,
+        newPost.likeCount,
+        newPost.description,
+        newPost.category,
+        newPost.link,
+        newPost.comments,
+        newPost.createdAt
+      ]
+    );
+
+    const [createdRows] = await db.query('SELECT * FROM posts WHERE id = ?', [newId]);
+
+    res.status(201).json({
+      success: true,
+      message: 'Post created successfully',
+      data: formatPostResponse(createdRows[0], req)
     });
+  } catch (err) {
+    console.error('Error creating post:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  const newPost = {
-    id: 'pin-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex'),
-    title: title.trim(),
-    author: (author && author.trim()) ? author.trim() : 'Fathan',
-    imagePath: finalImagePath,
-    imageUrl: finalImageUrl || '',
-    likes: [],
-    likeCount: 0,
-    createdAt: new Date().toISOString()
-  };
-
-  posts.unshift(newPost);
-  writePosts(posts);
-
-  res.status(201).json({
-    success: true,
-    message: 'Post created successfully',
-    data: formatPostResponse(newPost, req)
-  });
 });
 
 // 5. UPDATE post (CRUD: Update/Edit)
-app.put('/api/posts/:id', upload.single('image'), (req, res) => {
-  const { id } = req.params;
-  const { title, imageUrl, author } = req.body;
+app.put('/api/posts/:id', upload.single('image'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, imageUrl, author, description, category, link } = req.body;
 
-  const postIndex = posts.findIndex(p => p.id === id);
-  if (postIndex === -1) {
-    return res.status(404).json({ success: false, message: 'Post not found' });
-  }
-
-  const existingPost = posts[postIndex];
-
-  // If user provided a new file
-  if (req.file) {
-    // Optionally delete old uploaded file if existed
-    if (existingPost.imagePath && fs.existsSync(existingPost.imagePath)) {
-      try {
-        fs.unlinkSync(existingPost.imagePath);
-      } catch (err) {
-        console.error('Failed to remove old image file:', err.message);
-      }
+    const [rows] = await db.query('SELECT * FROM posts WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
     }
-    existingPost.imagePath = req.file.path;
-    existingPost.imageUrl = '';
-  } else if (imageUrl && imageUrl.trim() !== '') {
-    existingPost.imageUrl = imageUrl.trim();
-    existingPost.imagePath = null;
+
+    const existingPost = rows[0];
+    let newImageUrl = existingPost.imageUrl;
+    let newImageUrls = typeof existingPost.imageUrls === 'string'
+      ? JSON.parse(existingPost.imageUrls || '[]')
+      : (existingPost.imageUrls || []);
+
+    if (req.file) {
+      newImageUrl = `/uploads/${req.file.filename}`;
+      newImageUrls = [newImageUrl];
+    } else if (imageUrl && imageUrl.trim() !== '') {
+      newImageUrl = imageUrl.trim();
+      newImageUrls = [newImageUrl];
+    }
+
+    const updatedTitle = (title && title.trim() !== '') ? title.trim() : existingPost.title;
+    const updatedAuthor = (author && author.trim()) ? author.trim() : existingPost.author;
+    const updatedDescription = description !== undefined ? description : existingPost.description;
+    const updatedCategory = category !== undefined ? category : existingPost.category;
+    const updatedLink = link !== undefined ? link : existingPost.link;
+
+    await db.query(
+      `UPDATE posts 
+       SET title = ?, imageUrl = ?, imageUrls = ?, author = ?, description = ?, category = ?, link = ?
+       WHERE id = ?`,
+      [
+        updatedTitle,
+        newImageUrl,
+        JSON.stringify(newImageUrls),
+        updatedAuthor,
+        updatedDescription,
+        updatedCategory,
+        updatedLink,
+        id
+      ]
+    );
+
+    const [updatedRows] = await db.query('SELECT * FROM posts WHERE id = ?', [id]);
+
+    res.json({
+      success: true,
+      message: 'Post updated successfully',
+      data: formatPostResponse(updatedRows[0], req)
+    });
+  } catch (err) {
+    console.error('Error updating post:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  if (title && title.trim() !== '') {
-    existingPost.title = title.trim();
-  }
-
-  if (author && author.trim() !== '') {
-    existingPost.author = author.trim();
-  }
-
-  existingPost.updatedAt = new Date().toISOString();
-
-  posts[postIndex] = existingPost;
-  writePosts(posts);
-
-  res.json({
-    success: true,
-    message: 'Post updated successfully',
-    data: formatPostResponse(existingPost, req)
-  });
 });
 
 // 6. DELETE post (CRUD: Delete)
-app.delete('/api/posts/:id', (req, res) => {
-  const { id } = req.params;
-  const postIndex = posts.findIndex(p => p.id === id);
+app.delete('/api/posts/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await db.query('SELECT * FROM posts WHERE id = ?', [id]);
 
-  if (postIndex === -1) {
-    return res.status(404).json({ success: false, message: 'Post not found' });
-  }
-
-  const [deletedPost] = posts.splice(postIndex, 1);
-
-  // Clean up uploaded file if present
-  if (deletedPost.imagePath && fs.existsSync(deletedPost.imagePath)) {
-    try {
-      fs.unlinkSync(deletedPost.imagePath);
-    } catch (err) {
-      console.error('Failed to clean up image on delete:', err.message);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
     }
+
+    const deletedPost = rows[0];
+
+    // Clean up uploaded file if present
+    if (deletedPost.imageUrl && deletedPost.imageUrl.startsWith('/uploads/')) {
+      const localFile = path.join(__dirname, deletedPost.imageUrl);
+      if (fs.existsSync(localFile)) {
+        try {
+          fs.unlinkSync(localFile);
+        } catch (_) {}
+      }
+    }
+
+    await db.query('DELETE FROM posts WHERE id = ?', [id]);
+
+    res.json({
+      success: true,
+      message: 'Post deleted successfully',
+      data: { id: deletedPost.id, title: deletedPost.title }
+    });
+  } catch (err) {
+    console.error('Error deleting post:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  writePosts(posts);
-
-  res.json({
-    success: true,
-    message: 'Post deleted successfully',
-    data: { id: deletedPost.id, title: deletedPost.title }
-  });
 });
 
 // 7. LIKE / LOVE TOGGLE
-app.post('/api/posts/:id/like', (req, res) => {
-  const { id } = req.params;
-  const { user } = req.body;
-  const username = user || 'Fathan';
+app.post('/api/posts/:id/like', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user } = req.body;
+    const username = user || 'Fathan';
 
-  const post = posts.find(p => p.id === id);
-  if (!post) {
-    return res.status(404).json({ success: false, message: 'Post not found' });
-  }
-
-  if (!Array.isArray(post.likes)) {
-    post.likes = [];
-  }
-
-  const existingIndex = post.likes.indexOf(username);
-  let isLiked = false;
-
-  if (existingIndex > -1) {
-    // Already liked -> Unlike
-    post.likes.splice(existingIndex, 1);
-    isLiked = false;
-  } else {
-    // Not liked -> Like
-    post.likes.push(username);
-    isLiked = true;
-  }
-
-  post.likeCount = post.likes.length;
-  writePosts(posts);
-
-  res.json({
-    success: true,
-    message: isLiked ? 'Liked post' : 'Unliked post',
-    data: {
-      id: post.id,
-      isLiked,
-      likeCount: post.likeCount,
-      likes: post.likes
+    const [rows] = await db.query('SELECT * FROM posts WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
     }
-  });
+
+    const post = rows[0];
+    let likes = [];
+    if (typeof post.likes === 'string') {
+      try {
+        likes = JSON.parse(post.likes);
+      } catch (_) {
+        likes = [];
+      }
+    } else if (Array.isArray(post.likes)) {
+      likes = [...post.likes];
+    }
+
+    const existingIndex = likes.indexOf(username);
+    let isLiked = false;
+
+    if (existingIndex > -1) {
+      likes.splice(existingIndex, 1);
+      isLiked = false;
+    } else {
+      likes.push(username);
+      isLiked = true;
+    }
+
+    const likeCount = likes.length;
+
+    await db.query('UPDATE posts SET likes = ?, likeCount = ? WHERE id = ?', [
+      JSON.stringify(likes),
+      likeCount,
+      id
+    ]);
+
+    res.json({
+      success: true,
+      message: isLiked ? 'Liked post' : 'Unliked post',
+      data: {
+        id: post.id,
+        isLiked,
+        likeCount,
+        likes
+      }
+    });
+  } catch (err) {
+    console.error('Error toggling like:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 8. ADD COMMENT
+app.post('/api/posts/:id/comment', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user, text, avatar } = req.body;
+
+    if (!text || text.trim() === '') {
+      return res.status(400).json({ success: false, message: 'Comment text is required' });
+    }
+
+    const [rows] = await db.query('SELECT * FROM posts WHERE id = ?', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Post not found' });
+    }
+
+    const post = rows[0];
+    let comments = [];
+    if (typeof post.comments === 'string') {
+      try {
+        comments = JSON.parse(post.comments);
+      } catch (_) {
+        comments = [];
+      }
+    } else if (Array.isArray(post.comments)) {
+      comments = [...post.comments];
+    }
+
+    const newComment = {
+      user: user || 'Anonymous',
+      avatar: avatar || (user ? user[0].toUpperCase() : 'U'),
+      text: text.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    comments.push(newComment);
+
+    await db.query('UPDATE posts SET comments = ? WHERE id = ?', [
+      JSON.stringify(comments),
+      id
+    ]);
+
+    res.status(201).json({
+      success: true,
+      message: 'Comment added successfully',
+      data: newComment
+    });
+  } catch (err) {
+    console.error('Error adding comment:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // Error handling middleware
@@ -379,7 +590,7 @@ app.use((err, req, res, next) => {
 // Start listening
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`===============================================`);
-  console.log(` Punny Express Server is running!`);
+  console.log(` Punny Express Server is running with Aiven DB!`);
   console.log(` Port: ${PORT}`);
   console.log(` Health check: http://localhost:${PORT}/api/health`);
   console.log(` Posts API:    http://localhost:${PORT}/api/posts`);
