@@ -7,6 +7,7 @@ class Post {
   final String imageUrl;
   final List<String> imageUrls;
   final String? videoUrl;   // data-URI or remote URL for a video post
+  final List<String> videoUrls;
   final String author;
   final List<String> likes;
   final int likeCount;
@@ -22,6 +23,7 @@ class Post {
     required this.imageUrl,
     List<String>? imageUrls,
     this.videoUrl,
+    List<String>? videoUrls,
     required this.author,
     required this.likes,
     required this.likeCount,
@@ -32,7 +34,10 @@ class Post {
     List<Map<String, String>>? comments,
   })  : imageUrls = (imageUrls != null && imageUrls.isNotEmpty)
             ? imageUrls
-            : [imageUrl],
+            : (imageUrl.isNotEmpty ? [imageUrl] : []),
+        videoUrls = (videoUrls != null && videoUrls.isNotEmpty)
+            ? videoUrls
+            : (videoUrl != null && videoUrl.isNotEmpty ? [videoUrl] : []),
         comments = comments ??
             [
               {
@@ -48,7 +53,8 @@ class Post {
             ];
 
   bool get isMultiImage => imageUrls.length > 1;
-  bool get isVideoPost => videoUrl != null && videoUrl!.isNotEmpty;
+  bool get isMultiVideo => videoUrls.length > 1;
+  bool get isVideoPost => (videoUrl != null && videoUrl!.isNotEmpty) || videoUrls.isNotEmpty;
 
   bool isLikedBy(String username) {
     return likes.contains(username);
@@ -84,6 +90,25 @@ class Post {
       video = 'http://localhost:5000$video';
     }
 
+    final rawVideos = json['videoUrls'];
+    List<String> parsedVideos = [];
+    if (rawVideos is List) {
+      parsedVideos = rawVideos.map((e) => e.toString()).toList();
+    }
+    parsedVideos = parsedVideos.map((v) {
+      if (v.startsWith('/uploads/')) {
+        return 'http://localhost:5000$v';
+      }
+      return v;
+    }).toList();
+
+    if (parsedVideos.isEmpty && video != null && video.isNotEmpty) {
+      parsedVideos = [video];
+    }
+    if (video == null && parsedVideos.isNotEmpty) {
+      video = parsedVideos.first;
+    }
+
     final rawComments = json['comments'];
     List<Map<String, String>> parsedComments = [];
     if (rawComments is List) {
@@ -112,6 +137,7 @@ class Post {
       imageUrl: primaryUrl,
       imageUrls: parsedUrls,
       videoUrl: video,
+      videoUrls: parsedVideos,
       author: json['author']?.toString() ?? 'Anonymous',
       likes: (json['likes'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -137,6 +163,7 @@ class Post {
       'imageUrl': imageUrl,
       'imageUrls': imageUrls,
       'videoUrl': videoUrl,
+      'videoUrls': videoUrls,
       'author': author,
       'likes': likes,
       'likeCount': likeCount,
@@ -154,6 +181,7 @@ class Post {
     String? imageUrl,
     List<String>? imageUrls,
     String? videoUrl,
+    List<String>? videoUrls,
     String? author,
     List<String>? likes,
     int? likeCount,
@@ -169,6 +197,7 @@ class Post {
       imageUrl: imageUrl ?? this.imageUrl,
       imageUrls: imageUrls ?? this.imageUrls,
       videoUrl: videoUrl ?? this.videoUrl,
+      videoUrls: videoUrls ?? this.videoUrls,
       author: author ?? this.author,
       likes: likes ?? this.likes,
       likeCount: likeCount ?? this.likeCount,

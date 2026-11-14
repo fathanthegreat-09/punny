@@ -108,8 +108,31 @@ class _AddPageState extends State<AddPage> {
 
   Future<void> _pickVideo() async {
     try {
+      final currentVideoCount = _selectedMedia.where((m) => m.isVideo).length;
+      if (currentVideoCount >= 5) {
+        _showError('Maximum 5 videos allowed per post');
+        return;
+      }
+
       final XFile? videoFile = await _picker.pickVideo(source: ImageSource.gallery);
       if (videoFile == null) return;
+
+      final length = await videoFile.length();
+      // Calculate current total video bytes
+      int currentVideoBytes = 0;
+      for (final m in _selectedMedia) {
+        if (m.isVideo && m.bytes != null) {
+          currentVideoBytes += m.bytes!.length;
+        }
+      }
+
+      const maxLimitBytes = 15 * 1024 * 1024; // 15MB limit
+      if (currentVideoBytes + length > maxLimitBytes) {
+        final currentMb = (currentVideoBytes / (1024 * 1024)).toStringAsFixed(1);
+        final fileMb = (length / (1024 * 1024)).toStringAsFixed(1);
+        _showError('Video exceeds 15MB limit ($fileMb MB, current total: $currentMb MB / 15 MB)');
+        return;
+      }
 
       // Read video bytes and convert to data URI for local preview
       final bytes = await videoFile.readAsBytes();
@@ -120,6 +143,7 @@ class _AddPageState extends State<AddPage> {
         _selectedMedia.add(UploadMediaItem(
           id: 'vid-${DateTime.now().microsecondsSinceEpoch}',
           file: videoFile,
+          bytes: bytes,
           dataUrl: dataUrl,
           name: videoFile.name.isNotEmpty ? videoFile.name : 'Video ${_selectedMedia.length + 1}',
           isVideo: true,
@@ -212,17 +236,17 @@ class _AddPageState extends State<AddPage> {
 
     try {
       final List<String> allImageUrls = [];
-      String? videoUrl;
+      final List<String> allVideoUrls = [];
 
       for (final item in _selectedMedia) {
         if (item.isVideo) {
-          // Store only first video URL/dataUrl
-          if (videoUrl == null) {
-            if (item.hasDataUrl) {
-              videoUrl = item.dataUrl;
-            } else if (item.url != null) {
-              videoUrl = item.url;
-            }
+          if (item.hasDataUrl) {
+            allVideoUrls.add(item.dataUrl!);
+          } else if (item.bytes != null) {
+            final ext = item.name.toLowerCase().endsWith('.webm') ? 'webm' : 'mp4';
+            allVideoUrls.add('data:video/$ext;base64,${base64Encode(item.bytes!)}');
+          } else if (item.url != null && item.url!.isNotEmpty) {
+            allVideoUrls.add(item.url!);
           }
         } else {
           // Image
@@ -238,7 +262,7 @@ class _AddPageState extends State<AddPage> {
 
       final description = _descriptionController.text.trim();
       final link = _linkController.text.trim();
-      final hasVideo = videoUrl != null;
+      final hasVideo = allVideoUrls.isNotEmpty;
 
       if (!hasVideo && allImageUrls.length > 1 && !_publishAsCarousel) {
         await ApiService().createMultiplePosts(
@@ -256,7 +280,8 @@ class _AddPageState extends State<AddPage> {
           author: ApiService().currentUser,
           imageUrls: allImageUrls.isNotEmpty ? allImageUrls : null,
           imageUrl: allImageUrls.isNotEmpty ? allImageUrls.first : null,
-          videoUrl: videoUrl,
+          videoUrl: allVideoUrls.isNotEmpty ? allVideoUrls.first : null,
+          videoUrls: allVideoUrls.isNotEmpty ? allVideoUrls : null,
           description: description.isNotEmpty ? description : null,
           category: _selectedCategory,
           link: link.isNotEmpty ? link : null,

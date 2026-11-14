@@ -188,6 +188,7 @@ function formatPostResponse(post, req) {
   };
 
   const parsedImageUrls = parseJsonField(post.imageUrls, []);
+  const parsedVideoUrls = parseJsonField(post.videoUrls, []);
   const parsedLikes = parseJsonField(post.likes, []);
   const parsedComments = parseJsonField(post.comments, []);
 
@@ -196,7 +197,19 @@ function formatPostResponse(post, req) {
     formattedImageUrl = `${protocol}://${host}${formattedImageUrl}`;
   }
 
-  const formattedImageUrls = (parsedImageUrls.length > 0 ? parsedImageUrls : [formattedImageUrl]).map(url => {
+  const formattedImageUrls = (parsedImageUrls.length > 0 ? parsedImageUrls : (formattedImageUrl ? [formattedImageUrl] : [])).map(url => {
+    if (typeof url === 'string' && url.startsWith('/uploads/')) {
+      return `${protocol}://${host}${url}`;
+    }
+    return url;
+  });
+
+  let formattedVideoUrl = post.videoUrl || null;
+  if (formattedVideoUrl && formattedVideoUrl.startsWith('/uploads/')) {
+    formattedVideoUrl = `${protocol}://${host}${formattedVideoUrl}`;
+  }
+
+  let formattedVideoUrls = (parsedVideoUrls.length > 0 ? parsedVideoUrls : (formattedVideoUrl ? [formattedVideoUrl] : [])).map(url => {
     if (typeof url === 'string' && url.startsWith('/uploads/')) {
       return `${protocol}://${host}${url}`;
     }
@@ -208,7 +221,8 @@ function formatPostResponse(post, req) {
     title: post.title,
     imageUrl: formattedImageUrl,
     imageUrls: formattedImageUrls,
-    videoUrl: post.videoUrl || null,
+    videoUrl: formattedVideoUrl,
+    videoUrls: formattedVideoUrls,
     author: post.author,
     likes: parsedLikes,
     likeCount: parsedLikes.length,
@@ -293,24 +307,12 @@ app.get('/api/posts/:id', async (req, res) => {
 });
 
 // 4. CREATE new post (CRUD: Create)
-app.post('/api/posts', upload.single('image'), async (req, res) => {
+app.post('/api/posts', upload.array('files', 10), async (req, res) => {
   try {
-    const { title, author, imageUrl, imageUrls, videoUrl, description, category, link } = req.body;
+    const { title, author, imageUrl, imageUrls, videoUrl, videoUrls, description, category, link } = req.body;
 
     if (!title || title.trim() === '') {
       return res.status(400).json({ success: false, message: 'Title is required' });
-    }
-
-    let finalImageUrl = imageUrl || '';
-    let finalVideoUrl = videoUrl || null;
-
-    if (req.file) {
-      const isVid = /mp4|webm|mov|mkv/.test(path.extname(req.file.filename).toLowerCase());
-      if (isVid) {
-        finalVideoUrl = `/uploads/${req.file.filename}`;
-      } else {
-        finalImageUrl = `/uploads/${req.file.filename}`;
-      }
     }
 
     // Helper to decode Base64 data URL to uploaded file in /uploads
@@ -343,37 +345,82 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
       }
     };
 
-    if (finalImageUrl && finalImageUrl.startsWith('data:')) {
-      finalImageUrl = saveBase64ToFile(finalImageUrl, 'img');
-    }
-    if (finalVideoUrl && finalVideoUrl.startsWith('data:')) {
-      finalVideoUrl = saveBase64ToFile(finalVideoUrl, 'vid');
-    }
+    let uploadedImages = [];
+    let uploadedVideos = [];
 
-    let resolvedImageUrls = [];
-    if (imageUrls) {
-      if (typeof imageUrls === 'string') {
-        try {
-          resolvedImageUrls = JSON.parse(imageUrls);
-        } catch (_) {
-          resolvedImageUrls = [imageUrls];
+    if (req.files && Array.isArray(req.files)) {
+      for (const file of req.files) {
+        const isVid = /mp4|webm|mov|mkv/.test(path.extname(file.filename).toLowerCase());
+        if (isVid) {
+          uploadedVideos.push(`/uploads/${file.filename}`);
+        } else {
+          uploadedImages.push(`/uploads/${file.filename}`);
         }
-      } else if (Array.isArray(imageUrls)) {
-        resolvedImageUrls = imageUrls;
       }
     }
 
-    // Save all base64 data URIs in imageUrls as files
+    // Process image URLs
+    let resolvedImageUrls = [...uploadedImages];
+    if (imageUrls) {
+      let parsed = [];
+      if (typeof imageUrls === 'string') {
+        try {
+          parsed = JSON.parse(imageUrls);
+        } catch (_) {
+          parsed = [imageUrls];
+        }
+      } else if (Array.isArray(imageUrls)) {
+        parsed = imageUrls;
+      }
+      for (const u of parsed) {
+        if (u) resolvedImageUrls.push(u);
+      }
+    }
+
+    if (imageUrl && !resolvedImageUrls.includes(imageUrl)) {
+      resolvedImageUrls.unshift(imageUrl);
+    }
+
+    // Convert any base64 images to uploaded files
     resolvedImageUrls = resolvedImageUrls.map(url => {
       if (typeof url === 'string' && url.startsWith('data:')) {
-        return saveBase64ToFile(url, 'carousel');
+        return saveBase64ToFile(url, 'img');
       }
       return url;
     });
 
-    if (resolvedImageUrls.length === 0 && finalImageUrl) {
-      resolvedImageUrls = [finalImageUrl];
+    // Process video URLs
+    let resolvedVideoUrls = [...uploadedVideos];
+    if (videoUrls) {
+      let parsed = [];
+      if (typeof videoUrls === 'string') {
+        try {
+          parsed = JSON.parse(videoUrls);
+        } catch (_) {
+          parsed = [videoUrls];
+        }
+      } else if (Array.isArray(videoUrls)) {
+        parsed = videoUrls;
+      }
+      for (const v of parsed) {
+        if (v) resolvedVideoUrls.push(v);
+      }
     }
+
+    if (videoUrl && !resolvedVideoUrls.includes(videoUrl)) {
+      resolvedVideoUrls.unshift(videoUrl);
+    }
+
+    // Convert any base64 videos to uploaded files
+    resolvedVideoUrls = resolvedVideoUrls.map(url => {
+      if (typeof url === 'string' && url.startsWith('data:')) {
+        return saveBase64ToFile(url, 'vid');
+      }
+      return url;
+    });
+
+    let finalImageUrl = resolvedImageUrls.length > 0 ? resolvedImageUrls[0] : '';
+    let finalVideoUrl = resolvedVideoUrls.length > 0 ? resolvedVideoUrls[0] : null;
 
     const newId = 'pin-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
     const newPost = {
@@ -381,7 +428,8 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
       title: title.trim(),
       imageUrl: finalImageUrl,
       imageUrls: JSON.stringify(resolvedImageUrls),
-      videoUrl: finalVideoUrl || null,
+      videoUrl: finalVideoUrl,
+      videoUrls: JSON.stringify(resolvedVideoUrls),
       author: (author && author.trim()) ? author.trim() : 'Fathan',
       likes: JSON.stringify([]),
       likeCount: 0,
@@ -393,14 +441,15 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
     };
 
     await db.query(
-      `INSERT INTO posts (id, title, imageUrl, imageUrls, videoUrl, author, likes, likeCount, description, category, link, comments, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO posts (id, title, imageUrl, imageUrls, videoUrl, videoUrls, author, likes, likeCount, description, category, link, comments, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newPost.id,
         newPost.title,
         newPost.imageUrl,
         newPost.imageUrls,
         newPost.videoUrl,
+        newPost.videoUrls,
         newPost.author,
         newPost.likes,
         newPost.likeCount,
@@ -426,10 +475,10 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
 });
 
 // 5. UPDATE post (CRUD: Update/Edit)
-app.put('/api/posts/:id', upload.single('image'), async (req, res) => {
+app.put('/api/posts/:id', upload.array('files', 10), async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, imageUrl, author, description, category, link } = req.body;
+    const { title, author, imageUrl, imageUrls, videoUrl, videoUrls, description, category, link } = req.body;
 
     const [rows] = await db.query('SELECT * FROM posts WHERE id = ?', [id]);
     if (rows.length === 0) {
@@ -437,18 +486,95 @@ app.put('/api/posts/:id', upload.single('image'), async (req, res) => {
     }
 
     const existingPost = rows[0];
-    let newImageUrl = existingPost.imageUrl;
-    let newImageUrls = typeof existingPost.imageUrls === 'string'
-      ? JSON.parse(existingPost.imageUrls || '[]')
-      : (existingPost.imageUrls || []);
 
-    if (req.file) {
-      newImageUrl = `/uploads/${req.file.filename}`;
-      newImageUrls = [newImageUrl];
-    } else if (imageUrl && imageUrl.trim() !== '') {
-      newImageUrl = imageUrl.trim();
-      newImageUrls = [newImageUrl];
+    // Helper to decode Base64 data URL to uploaded file in /uploads
+    const saveBase64ToFile = (dataUrlStr, prefix = 'media') => {
+      try {
+        if (!dataUrlStr || typeof dataUrlStr !== 'string' || !dataUrlStr.startsWith('data:')) {
+          return dataUrlStr;
+        }
+        const matches = dataUrlStr.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) {
+          return dataUrlStr;
+        }
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        let ext = '.jpg';
+        if (mimeType.includes('png')) ext = '.png';
+        else if (mimeType.includes('webp')) ext = '.webp';
+        else if (mimeType.includes('gif')) ext = '.gif';
+        else if (mimeType.includes('mp4')) ext = '.mp4';
+        else if (mimeType.includes('webm')) ext = '.webm';
+        else if (mimeType.includes('quicktime')) ext = '.mov';
+
+        const fileName = `pin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+        const filePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(filePath, buffer);
+        return `/uploads/${fileName}`;
+      } catch (err) {
+        console.error('Error saving base64 to file:', err);
+        return dataUrlStr;
+      }
+    };
+
+    let newImageUrls = [];
+    if (imageUrls !== undefined) {
+      if (typeof imageUrls === 'string') {
+        try {
+          newImageUrls = JSON.parse(imageUrls);
+        } catch (_) {
+          newImageUrls = imageUrls ? [imageUrls] : [];
+        }
+      } else if (Array.isArray(imageUrls)) {
+        newImageUrls = imageUrls;
+      }
+    } else {
+      newImageUrls = typeof existingPost.imageUrls === 'string'
+        ? JSON.parse(existingPost.imageUrls || '[]')
+        : (existingPost.imageUrls || []);
+      if (newImageUrls.length === 0 && existingPost.imageUrl) {
+        newImageUrls = [existingPost.imageUrl];
+      }
     }
+
+    let newVideoUrls = [];
+    if (videoUrls !== undefined) {
+      if (typeof videoUrls === 'string') {
+        try {
+          newVideoUrls = JSON.parse(videoUrls);
+        } catch (_) {
+          newVideoUrls = videoUrls ? [videoUrls] : [];
+        }
+      } else if (Array.isArray(videoUrls)) {
+        newVideoUrls = videoUrls;
+      }
+    } else {
+      newVideoUrls = typeof existingPost.videoUrls === 'string'
+        ? JSON.parse(existingPost.videoUrls || '[]')
+        : (existingPost.videoUrls || []);
+      if (newVideoUrls.length === 0 && existingPost.videoUrl) {
+        newVideoUrls = [existingPost.videoUrl];
+      }
+    }
+
+    // If new files were uploaded in PUT
+    if (req.files && Array.isArray(req.files)) {
+      for (const file of req.files) {
+        const isVid = /mp4|webm|mov|mkv/.test(path.extname(file.filename).toLowerCase());
+        if (isVid) {
+          newVideoUrls.push(`/uploads/${file.filename}`);
+        } else {
+          newImageUrls.push(`/uploads/${file.filename}`);
+        }
+      }
+    }
+
+    // Convert any base64 data URIs
+    newImageUrls = newImageUrls.map(url => saveBase64ToFile(url, 'img'));
+    newVideoUrls = newVideoUrls.map(url => saveBase64ToFile(url, 'vid'));
+
+    let newImageUrl = newImageUrls.length > 0 ? newImageUrls[0] : (imageUrl || '');
+    let newVideoUrl = newVideoUrls.length > 0 ? newVideoUrls[0] : (videoUrl || null);
 
     const updatedTitle = (title && title.trim() !== '') ? title.trim() : existingPost.title;
     const updatedAuthor = (author && author.trim()) ? author.trim() : existingPost.author;
@@ -458,12 +584,14 @@ app.put('/api/posts/:id', upload.single('image'), async (req, res) => {
 
     await db.query(
       `UPDATE posts 
-       SET title = ?, imageUrl = ?, imageUrls = ?, author = ?, description = ?, category = ?, link = ?
+       SET title = ?, imageUrl = ?, imageUrls = ?, videoUrl = ?, videoUrls = ?, author = ?, description = ?, category = ?, link = ?
        WHERE id = ?`,
       [
         updatedTitle,
         newImageUrl,
         JSON.stringify(newImageUrls),
+        newVideoUrl,
+        JSON.stringify(newVideoUrls),
         updatedAuthor,
         updatedDescription,
         updatedCategory,

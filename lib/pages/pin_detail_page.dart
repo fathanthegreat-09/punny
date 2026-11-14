@@ -176,10 +176,14 @@ class _PinDetailPageState extends State<PinDetailPage> {
 
   Widget _buildImageSection(List<String> images) {
     final isVideo = _currentPost.isVideoPost;
-    final videoSrc = _currentPost.videoUrl ?? '';
-    final activeUrl = (images.isNotEmpty && _currentImageIndex < images.length)
-        ? images[_currentImageIndex]
-        : _currentPost.imageUrl;
+    final videos = _currentPost.videoUrls;
+    final isMultiVideo = videos.length > 1;
+
+    final mediaList = isVideo ? videos : images;
+    final totalCount = mediaList.length;
+    final activeMedia = (mediaList.isNotEmpty && _currentImageIndex < mediaList.length)
+        ? mediaList[_currentImageIndex]
+        : (isVideo ? (_currentPost.videoUrl ?? '') : _currentPost.imageUrl);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -195,8 +199,11 @@ class _PinDetailPageState extends State<PinDetailPage> {
               alignment: Alignment.center,
               children: [
                 // VIDEO player
-                if (isVideo && videoSrc.isNotEmpty)
-                  SizedBox.expand(child: buildVideoPreview(videoSrc, showControls: true))
+                if (isVideo && activeMedia.isNotEmpty)
+                  SizedBox.expand(
+                    key: ValueKey<String>('vid-$activeMedia-$_currentImageIndex'),
+                    child: buildVideoPreview(activeMedia, showControls: true),
+                  )
                 else
                   // IMAGE carousel (swipeable)
                   GestureDetector(
@@ -213,9 +220,9 @@ class _PinDetailPageState extends State<PinDetailPage> {
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),
                         child: Container(
-                          key: ValueKey<String>('$activeUrl-$_currentImageIndex'),
+                          key: ValueKey<String>('$activeMedia-$_currentImageIndex'),
                           constraints: const BoxConstraints(maxHeight: 580),
-                          child: buildSafeImage(activeUrl, fit: BoxFit.contain),
+                          child: buildSafeImage(activeMedia, fit: BoxFit.contain),
                         ),
                       ),
                     ),
@@ -230,12 +237,15 @@ class _PinDetailPageState extends State<PinDetailPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.65), borderRadius: BorderRadius.circular(16)),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.videocam_rounded, size: 14, color: Colors.white),
-                          SizedBox(width: 4),
-                          Text('Video', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                          const Icon(Icons.videocam_rounded, size: 14, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(
+                            isMultiVideo ? 'Video ${_currentImageIndex + 1} / $totalCount' : 'Video',
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
                         ],
                       ),
                     ),
@@ -273,44 +283,44 @@ class _PinDetailPageState extends State<PinDetailPage> {
                       child: IconButton(
                         tooltip: 'Save / Download Image',
                         icon: const Icon(Icons.download_rounded, color: Colors.white, size: 18),
-                        onPressed: () => _handleDownloadImage(activeUrl),
+                        onPressed: () => _handleDownloadImage(activeMedia),
                       ),
                     ),
                   ),
 
-                // Previous Arrow (images only)
-                if (!isVideo && images.length > 1 && _currentImageIndex > 0)
+                // Previous Arrow
+                if (totalCount > 1 && _currentImageIndex > 0)
                   Positioned(
                     left: 12,
                     child: CircleAvatar(
                       backgroundColor: Colors.black.withValues(alpha: 0.6),
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 16),
-                        onPressed: () => _prevImage(images.length),
+                        onPressed: () => _prevImage(totalCount),
                       ),
                     ),
                   ),
 
-                // Next Arrow (images only)
-                if (!isVideo && images.length > 1 && _currentImageIndex < images.length - 1)
+                // Next Arrow
+                if (totalCount > 1 && _currentImageIndex < totalCount - 1)
                   Positioned(
                     right: 12,
                     child: CircleAvatar(
                       backgroundColor: Colors.black.withValues(alpha: 0.6),
                       child: IconButton(
                         icon: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
-                        onPressed: () => _nextImage(images.length),
+                        onPressed: () => _nextImage(totalCount),
                       ),
                     ),
                   ),
 
-                // Indicator Dots (images only)
-                if (!isVideo && images.length > 1)
+                // Indicator Dots
+                if (totalCount > 1)
                   Positioned(
                     bottom: 12,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: List.generate(images.length, (i) {
+                      children: List.generate(totalCount, (i) {
                         final isSel = _currentImageIndex == i;
                         return AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
@@ -330,17 +340,18 @@ class _PinDetailPageState extends State<PinDetailPage> {
           ),
         ),
 
-        // Thumbnails Strip (image carousel only)
-        if (!isVideo && images.length > 1) ...[
+        // Thumbnails Strip
+        if (totalCount > 1) ...[
           const SizedBox(height: 12),
           SizedBox(
             height: 60,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: images.length,
+              itemCount: totalCount,
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (context, idx) {
                 final isSel = idx == _currentImageIndex;
+                final itemUrl = mediaList[idx];
                 return GestureDetector(
                   onTap: () => setState(() => _currentImageIndex = idx),
                   child: AnimatedContainer(
@@ -348,6 +359,27 @@ class _PinDetailPageState extends State<PinDetailPage> {
                     width: 60,
                     height: 60,
                     decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSel ? const Color(0xFFE60023) : const Color(0xFFE2E8F0),
+                        width: isSel ? 2.5 : 1.0,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: isVideo
+                          ? buildVideoThumbnail(videoUrl: itemUrl)
+                          : buildSafeImage(itemUrl, fit: BoxFit.cover),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                           color: isSel ? const Color(0xFFE60023) : Colors.transparent, width: 2.5),

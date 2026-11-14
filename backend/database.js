@@ -24,6 +24,7 @@ async function initDb() {
       imageUrl TEXT,
       imageUrls JSON,
       videoUrl TEXT,
+      videoUrls JSON,
       author VARCHAR(100) NOT NULL,
       likes JSON,
       likeCount INT DEFAULT 0,
@@ -35,6 +36,19 @@ async function initDb() {
     );
   `;
   await pool.query(createTableQuery);
+
+  // Ensure videoUrls column exists for backward compatibility
+  try {
+    const [cols] = await pool.query(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'posts' AND COLUMN_NAME = 'videoUrls'"
+    );
+    if (cols.length === 0) {
+      await pool.query('ALTER TABLE posts ADD COLUMN videoUrls JSON');
+    }
+  } catch (colErr) {
+    console.error('Error verifying videoUrls column:', colErr.message);
+  }
+
   console.log('Connected to Aiven Database and table ready!');
 }
 

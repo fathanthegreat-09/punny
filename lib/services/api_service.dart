@@ -58,7 +58,7 @@ class ApiService {
       Post(
         id: 'pin-user-1',
         imageUrl: 'assets/images/file11.jpg',
-        title: 'Blue Archive Vibes & Aesthetic',
+        title: 'Laffey',
         author: 'Fathan',
         likes: ['Sensei', 'Yuuka', 'Arona'],
         likeCount: 3,
@@ -516,7 +516,7 @@ class ApiService {
     return found;
   }
 
-  // 3. Create a new post (Supports File Upload, Multiple Files, Image URLs, Video)
+  // 3. Create a new post (Supports File Upload, Multiple Files, Image URLs, Multiple Videos)
   Future<Post> createPost({
     required String title,
     required String author,
@@ -525,6 +525,7 @@ class ApiService {
     List<XFile>? imageFiles,
     List<String>? imageUrls,
     String? videoUrl,
+    List<String>? videoUrls,
     String? description,
     String? category,
     String? link,
@@ -558,8 +559,17 @@ class ApiService {
       allResolvedUrls.add(imageUrl.trim());
     }
 
-    // For video posts, don't use asset image placeholder as primaryUrl if videoUrl exists
-    final isVideoPost = videoUrl != null && videoUrl.isNotEmpty;
+    // Build collection of video URLs
+    final List<String> allResolvedVideoUrls = [];
+    if (videoUrls != null && videoUrls.isNotEmpty) {
+      allResolvedVideoUrls.addAll(videoUrls.where((v) => v.trim().isNotEmpty));
+    }
+    if (videoUrl != null && videoUrl.trim().isNotEmpty && !allResolvedVideoUrls.contains(videoUrl.trim())) {
+      allResolvedVideoUrls.insert(0, videoUrl.trim());
+    }
+
+    final isVideoPost = allResolvedVideoUrls.isNotEmpty;
+    final primaryVideo = isVideoPost ? allResolvedVideoUrls.first : null;
     final primaryUrl = allResolvedUrls.isNotEmpty
         ? allResolvedUrls.first
         : (isVideoPost ? '' : 'assets/images/file.jpg');
@@ -567,13 +577,14 @@ class ApiService {
     try {
       final uri = Uri.parse('$baseUrl/api/posts');
 
-      // Send to backend via JSON payload (handles multiple images, base64, videoUrl, etc.)
+      // Send to backend via JSON payload (handles multiple images, videos, base64, etc.)
       final payload = {
         'title': title,
         'author': author,
         'imageUrl': primaryUrl,
         'imageUrls': allResolvedUrls,
-        'videoUrl': videoUrl,
+        'videoUrl': primaryVideo,
+        'videoUrls': allResolvedVideoUrls,
         'description': description,
         'category': category,
         'link': link,
@@ -602,7 +613,8 @@ class ApiService {
         title: title,
         imageUrl: primaryUrl,
         imageUrls: allResolvedUrls.isNotEmpty ? allResolvedUrls : [primaryUrl],
-        videoUrl: videoUrl,
+        videoUrl: primaryVideo,
+        videoUrls: allResolvedVideoUrls,
         author: author,
         likes: [],
         likeCount: 0,
@@ -611,10 +623,16 @@ class ApiService {
         category: category,
         link: link,
       );
-    } else if (allResolvedUrls.length > 1) {
-      createdPost = createdPost.copyWith(imageUrls: allResolvedUrls);
-    } else if (isVideoPost) {
-      createdPost = createdPost.copyWith(videoUrl: videoUrl);
+    } else {
+      if (allResolvedUrls.length > 1) {
+        createdPost = createdPost.copyWith(imageUrls: allResolvedUrls);
+      }
+      if (allResolvedVideoUrls.isNotEmpty) {
+        createdPost = createdPost.copyWith(
+          videoUrl: primaryVideo,
+          videoUrls: allResolvedVideoUrls,
+        );
+      }
     }
 
     addPostToCache(createdPost);
@@ -660,52 +678,58 @@ class ApiService {
     }
   }
 
-  // 4. Update post (CRUD: Edit)
+  // 4. Update post (CRUD: Edit - supports replacing/deleting individual images & videos)
   Future<Post> updatePost({
     required String id,
     required String title,
     String? author,
     XFile? imageFile,
     String? imageUrl,
+    List<String>? imageUrls,
+    String? videoUrl,
+    List<String>? videoUrls,
+    String? description,
+    String? category,
+    String? link,
   }) async {
     Post? updatedPost;
+
+    // Helper to resolve any new files or urls
+    final List<String>? finalImageUrls = imageUrls != null ? List<String>.from(imageUrls) : null;
+    final List<String>? finalVideoUrls = videoUrls != null ? List<String>.from(videoUrls) : null;
 
     try {
       final uri = Uri.parse('$baseUrl/api/posts/$id');
 
-      if (imageFile != null) {
-        final request = http.MultipartRequest('PUT', uri);
-        request.fields['title'] = title;
-        if (author != null) request.fields['author'] = author;
+      final body = <String, dynamic>{'title': title};
+      if (author != null) body['author'] = author;
+      if (description != null) body['description'] = description;
+      if (category != null) body['category'] = category;
+      if (link != null) body['link'] = link;
+      if (finalImageUrls != null) {
+        body['imageUrls'] = finalImageUrls;
+        body['imageUrl'] = finalImageUrls.isNotEmpty ? finalImageUrls.first : '';
+      } else if (imageUrl != null && imageUrl.isNotEmpty) {
+        body['imageUrl'] = imageUrl;
+        body['imageUrls'] = [imageUrl];
+      }
+      if (finalVideoUrls != null) {
+        body['videoUrls'] = finalVideoUrls;
+        body['videoUrl'] = finalVideoUrls.isNotEmpty ? finalVideoUrls.first : null;
+      } else if (videoUrl != null) {
+        body['videoUrl'] = videoUrl;
+        body['videoUrls'] = videoUrl.isNotEmpty ? [videoUrl] : [];
+      }
 
-        final fileBytes = await imageFile.readAsBytes();
-        final multipartFile = http.MultipartFile.fromBytes(
-          'image',
-          fileBytes,
-          filename: imageFile.name.isNotEmpty ? imageFile.name : 'upload.jpg',
-        );
-        request.files.add(multipartFile);
+      final response = await http.put(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(body),
+      ).timeout(const Duration(seconds: 10));
 
-        final streamedResponse = await request.send().timeout(const Duration(seconds: 8));
-        final response = await http.Response.fromStream(streamedResponse);
-
-        if (response.statusCode == 200) {
-          final decoded = json.decode(response.body);
-          updatedPost = Post.fromJson(decoded['data']);
-        }
-      } else {
-        final body = <String, dynamic>{'title': title};
-        if (author != null) body['author'] = author;
-        if (imageUrl != null && imageUrl.isNotEmpty) body['imageUrl'] = imageUrl;
-
-        final response = await http.put(
-          uri,
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode(body),
-        ).timeout(const Duration(seconds: 6));
-
-        if (response.statusCode == 200) {
-          final decoded = json.decode(response.body);
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded['data'] != null) {
           updatedPost = Post.fromJson(decoded['data']);
         }
       }
@@ -717,10 +741,18 @@ class ApiService {
       final idx = _allPosts.indexWhere((p) => p.id == id);
       if (idx != -1) {
         final existing = _allPosts[idx];
+        final newImgs = finalImageUrls ?? ((imageUrl != null && imageUrl.isNotEmpty) ? [imageUrl] : existing.imageUrls);
+        final newVids = finalVideoUrls ?? ((videoUrl != null && videoUrl.isNotEmpty) ? [videoUrl] : existing.videoUrls);
         updatedPost = existing.copyWith(
           title: title,
           author: author ?? existing.author,
-          imageUrl: (imageUrl != null && imageUrl.isNotEmpty) ? imageUrl : existing.imageUrl,
+          imageUrl: newImgs.isNotEmpty ? newImgs.first : existing.imageUrl,
+          imageUrls: newImgs,
+          videoUrl: newVids.isNotEmpty ? newVids.first : null,
+          videoUrls: newVids,
+          description: description ?? existing.description,
+          category: category ?? existing.category,
+          link: link ?? existing.link,
         );
       } else {
         throw Exception('Post not found');
@@ -861,10 +893,16 @@ class ApiService {
         return false;
       }).map((p) {
         final jsonMap = p.toJson();
-        // If videoUrl is a huge data URI, don't save the full base64 in localStorage to avoid 5MB quota crash
+        // If videoUrl or videoUrls have huge data URIs, don't save full base64 in localStorage to avoid 5MB quota crash
         final vid = jsonMap['videoUrl']?.toString();
         if (vid != null && vid.startsWith('data:') && vid.length > 50000) {
           jsonMap['videoUrl'] = '';
+        }
+        if (jsonMap['videoUrls'] is List) {
+          jsonMap['videoUrls'] = (jsonMap['videoUrls'] as List).map((v) {
+            final s = v?.toString() ?? '';
+            return (s.startsWith('data:') && s.length > 50000) ? '' : s;
+          }).toList();
         }
         return jsonMap;
       }).toList();
