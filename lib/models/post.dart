@@ -60,11 +60,28 @@ class Post {
     if (rawImages is List) {
       parsedUrls = rawImages.map((e) => e.toString()).toList();
     }
-    final primaryUrl = json['imageUrl']?.toString() ??
+    String primaryUrl = json['imageUrl']?.toString() ??
         (parsedUrls.isNotEmpty ? parsedUrls.first : '');
+
+    // Format relative uploads path to absolute URL
+    if (primaryUrl.startsWith('/uploads/')) {
+      primaryUrl = 'http://localhost:5000$primaryUrl';
+    }
+
+    parsedUrls = parsedUrls.map((u) {
+      if (u.startsWith('/uploads/')) {
+        return 'http://localhost:5000$u';
+      }
+      return u;
+    }).toList();
 
     if (parsedUrls.isEmpty && primaryUrl.isNotEmpty) {
       parsedUrls = [primaryUrl];
+    }
+
+    String? video = json['videoUrl']?.toString();
+    if (video != null && video.startsWith('/uploads/')) {
+      video = 'http://localhost:5000$video';
     }
 
     final rawComments = json['comments'];
@@ -94,7 +111,7 @@ class Post {
       title: json['title']?.toString() ?? '',
       imageUrl: primaryUrl,
       imageUrls: parsedUrls,
-      videoUrl: json['videoUrl']?.toString(),
+      videoUrl: video,
       author: json['author']?.toString() ?? 'Anonymous',
       likes: (json['likes'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -172,6 +189,10 @@ Widget buildSafeImage(
   double? height,
   Widget Function(BuildContext, Object, StackTrace?)? errorBuilder,
 }) {
+  if (url.startsWith('/uploads/')) {
+    url = 'http://localhost:5000$url';
+  }
+
   if (url.startsWith('data:image')) {
     try {
       final base64String = url.contains(',') ? url.split(',').last : url;

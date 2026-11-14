@@ -428,17 +428,15 @@ class ApiService {
   }
 
   void _mergeBackendPosts(List<Post> backendPosts) {
-    final existingIds = _allPosts.map((p) => p.id).toSet();
     for (final post in backendPosts) {
-      if (!existingIds.contains(post.id)) {
-        _allPosts.insert(0, post);
+      final idx = _allPosts.indexWhere((p) => p.id == post.id);
+      if (idx != -1) {
+        _allPosts[idx] = post;
       } else {
-        final idx = _allPosts.indexWhere((p) => p.id == post.id);
-        if (idx != -1) {
-          _allPosts[idx] = post;
-        }
+        _allPosts.insert(0, post);
       }
     }
+    _persistCustomPosts();
     notifyChanges();
   }
 
@@ -560,48 +558,36 @@ class ApiService {
       allResolvedUrls.add(imageUrl.trim());
     }
 
-    // For video posts, use a placeholder image if no images provided
+    // For video posts, don't use asset image placeholder as primaryUrl if videoUrl exists
     final isVideoPost = videoUrl != null && videoUrl.isNotEmpty;
     final primaryUrl = allResolvedUrls.isNotEmpty
         ? allResolvedUrls.first
-        : (isVideoPost ? 'assets/images/file.jpg' : 'assets/images/file.jpg');
+        : (isVideoPost ? '' : 'assets/images/file.jpg');
 
     try {
       final uri = Uri.parse('$baseUrl/api/posts');
 
-      if (imageFile != null) {
-        final request = http.MultipartRequest('POST', uri);
-        request.fields['title'] = title;
-        request.fields['author'] = author;
+      // Send to backend via JSON payload (handles multiple images, base64, videoUrl, etc.)
+      final payload = {
+        'title': title,
+        'author': author,
+        'imageUrl': primaryUrl,
+        'imageUrls': allResolvedUrls,
+        'videoUrl': videoUrl,
+        'description': description,
+        'category': category,
+        'link': link,
+      };
 
-        final fileBytes = await imageFile.readAsBytes();
-        final multipartFile = http.MultipartFile.fromBytes(
-          'image',
-          fileBytes,
-          filename: imageFile.name.isNotEmpty ? imageFile.name : 'upload.jpg',
-        );
-        request.files.add(multipartFile);
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      ).timeout(const Duration(seconds: 15));
 
-        final streamedResponse = await request.send().timeout(const Duration(seconds: 8));
-        final response = await http.Response.fromStream(streamedResponse);
-
-        if (response.statusCode == 201 || response.statusCode == 200) {
-          final decoded = json.decode(response.body);
-          createdPost = Post.fromJson(decoded['data']);
-        }
-      } else if (imageUrl != null && imageUrl.isNotEmpty) {
-        final response = await http.post(
-          uri,
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({
-            'title': title,
-            'author': author,
-            'imageUrl': imageUrl,
-          }),
-        ).timeout(const Duration(seconds: 6));
-
-        if (response.statusCode == 201 || response.statusCode == 200) {
-          final decoded = json.decode(response.body);
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded['data'] != null) {
           createdPost = Post.fromJson(decoded['data']);
         }
       }
@@ -821,9 +807,12 @@ class ApiService {
         for (final item in decoded) {
           try {
             final p = Post.fromJson(Map<String, dynamic>.from(item as Map));
+            // Don't overwrite if backend has valid imageUrl while local storage has empty
             final existingIdx = _allPosts.indexWhere((existing) => existing.id == p.id);
             if (existingIdx != -1) {
-              _allPosts[existingIdx] = p;
+              if (p.imageUrl.isNotEmpty || _allPosts[existingIdx].imageUrl.isEmpty) {
+                _allPosts[existingIdx] = p;
+              }
             } else {
               _allPosts.insert(0, p);
             }
@@ -870,7 +859,15 @@ class ApiService {
         // Also persist if a default post was edited or got new comments
         if (p.comments.length != 2) return true;
         return false;
-      }).map((p) => p.toJson()).toList();
+      }).map((p) {
+        final jsonMap = p.toJson();
+        // If videoUrl is a huge data URI, don't save the full base64 in localStorage to avoid 5MB quota crash
+        final vid = jsonMap['videoUrl']?.toString();
+        if (vid != null && vid.startsWith('data:') && vid.length > 50000) {
+          jsonMap['videoUrl'] = '';
+        }
+        return jsonMap;
+      }).toList();
 
       AppStorage.set(_storageKeyCustomPosts, json.encode(postsToSave));
     } catch (e) {

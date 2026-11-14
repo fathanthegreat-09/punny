@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/post.dart';
 import '../pages/pin_detail_page.dart';
 import '../services/api_service.dart';
+import '../services/video_player.dart';
 
 class PinCard extends StatefulWidget {
   final Post post;
@@ -148,10 +149,12 @@ class _PinCardState extends State<PinCard> {
                     onTap: () => _openDetail(context),
                     child: AspectRatio(
                       aspectRatio: 1.0,
-                      child: buildSafeImage(
-                        widget.post.imageUrl,
-                        fit: BoxFit.cover,
-                      ),
+                      child: widget.post.isVideoPost
+                          ? buildVideoThumbnail(videoUrl: widget.post.videoUrl)
+                          : buildSafeImage(
+                              widget.post.imageUrl,
+                              fit: BoxFit.cover,
+                            ),
                     ),
                   ),
 

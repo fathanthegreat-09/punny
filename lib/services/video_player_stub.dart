@@ -10,7 +10,7 @@ Widget buildVideoPreview(String dataUrl, {bool showControls = true}) {
   );
 }
 
-Widget buildVideoThumbnail() {
+Widget buildVideoThumbnail({String? videoUrl}) {
   return Container(
     color: const Color(0xFF1E293B),
     child: const Center(

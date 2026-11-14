@@ -302,8 +302,52 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
     }
 
     let finalImageUrl = imageUrl || '';
+    let finalVideoUrl = videoUrl || null;
+
     if (req.file) {
-      finalImageUrl = `/uploads/${req.file.filename}`;
+      const isVid = /mp4|webm|mov|mkv/.test(path.extname(req.file.filename).toLowerCase());
+      if (isVid) {
+        finalVideoUrl = `/uploads/${req.file.filename}`;
+      } else {
+        finalImageUrl = `/uploads/${req.file.filename}`;
+      }
+    }
+
+    // Helper to decode Base64 data URL to uploaded file in /uploads
+    const saveBase64ToFile = (dataUrlStr, prefix = 'media') => {
+      try {
+        if (!dataUrlStr || typeof dataUrlStr !== 'string' || !dataUrlStr.startsWith('data:')) {
+          return dataUrlStr;
+        }
+        const matches = dataUrlStr.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) {
+          return dataUrlStr;
+        }
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        let ext = '.jpg';
+        if (mimeType.includes('png')) ext = '.png';
+        else if (mimeType.includes('webp')) ext = '.webp';
+        else if (mimeType.includes('gif')) ext = '.gif';
+        else if (mimeType.includes('mp4')) ext = '.mp4';
+        else if (mimeType.includes('webm')) ext = '.webm';
+        else if (mimeType.includes('quicktime')) ext = '.mov';
+
+        const fileName = `pin-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+        const filePath = path.join(uploadDir, fileName);
+        fs.writeFileSync(filePath, buffer);
+        return `/uploads/${fileName}`;
+      } catch (err) {
+        console.error('Error saving base64 to file:', err);
+        return dataUrlStr;
+      }
+    };
+
+    if (finalImageUrl && finalImageUrl.startsWith('data:')) {
+      finalImageUrl = saveBase64ToFile(finalImageUrl, 'img');
+    }
+    if (finalVideoUrl && finalVideoUrl.startsWith('data:')) {
+      finalVideoUrl = saveBase64ToFile(finalVideoUrl, 'vid');
     }
 
     let resolvedImageUrls = [];
@@ -318,6 +362,15 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
         resolvedImageUrls = imageUrls;
       }
     }
+
+    // Save all base64 data URIs in imageUrls as files
+    resolvedImageUrls = resolvedImageUrls.map(url => {
+      if (typeof url === 'string' && url.startsWith('data:')) {
+        return saveBase64ToFile(url, 'carousel');
+      }
+      return url;
+    });
+
     if (resolvedImageUrls.length === 0 && finalImageUrl) {
       resolvedImageUrls = [finalImageUrl];
     }
@@ -328,7 +381,7 @@ app.post('/api/posts', upload.single('image'), async (req, res) => {
       title: title.trim(),
       imageUrl: finalImageUrl,
       imageUrls: JSON.stringify(resolvedImageUrls),
-      videoUrl: videoUrl || null,
+      videoUrl: finalVideoUrl || null,
       author: (author && author.trim()) ? author.trim() : 'Fathan',
       likes: JSON.stringify([]),
       likeCount: 0,
