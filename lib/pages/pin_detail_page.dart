@@ -380,23 +380,6 @@ class _PinDetailPageState extends State<PinDetailPage> {
       ],
     );
   }
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: isSel ? const Color(0xFFE60023) : Colors.transparent, width: 2.5),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(9),
-                      child: buildSafeImage(images[idx], fit: BoxFit.cover),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
