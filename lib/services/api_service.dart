@@ -32,6 +32,12 @@ class ApiService {
     notifyChanges();
   }
 
+  // Administrator check
+  bool get isAdmin {
+    final lower = _currentUser.trim().toLowerCase();
+    return lower == 'admin' || lower == 'administrator';
+  }
+
   // Global change notifier for reactive UI updates
   final ValueNotifier<int> changeNotifier = ValueNotifier<int>(0);
 
@@ -55,6 +61,17 @@ class ApiService {
 
   void _initDefaultPosts() {
     _allPosts = [
+      Post(
+        id: 'ad-pin-1',
+        imageUrl: 'assets/images/file11.jpg',
+        title: 'Pixiv Fanbox Creators Campaign',
+        author: 'Pixiv_Official',
+        category: 'Ads & Marketing',
+        description: 'Explore exclusive artwork, digital comics, and support your favorite creators.',
+        link: 'https://fanbox.pixiv.net',
+        likes: ['Sensei', 'Fathan'],
+        likeCount: 95,
+      ),
       Post(
         id: 'pin-user-1',
         imageUrl: 'assets/images/file11.jpg',
@@ -1067,6 +1084,10 @@ class ApiService {
   List<Post> getFollowingPosts() {
     final followingLower = _following.map((f) => f.toLowerCase()).toSet();
     return _allPosts.where((p) => followingLower.contains(p.author.toLowerCase())).toList();
+  }
+
+  List<Post> getMarketingPosts() {
+    return _allPosts.where((p) => p.isMarketing).toList();
   }
 
   List<String> getUniqueAuthors() {

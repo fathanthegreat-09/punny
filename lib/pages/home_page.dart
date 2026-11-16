@@ -5,10 +5,13 @@ import 'package:salomon_bottom_bar/salomon_bottom_bar.dart';
 
 import '../models/post.dart';
 import '../services/api_service.dart';
+import '../services/video_player.dart';
 import '../widgets/edit_post_dialog.dart';
 import '../widgets/pin_card.dart';
 import 'add_page.dart';
+import 'admin_content_page.dart';
 import 'notification_page.dart';
+import 'pin_detail_page.dart';
 import 'search_page.dart';
 import 'user_page.dart';
 
@@ -26,9 +29,10 @@ class _HomePageState extends State<HomePage> {
   bool _isRefreshing = false;
 
   // Filter & Sort States
-  String _activeFilter = 'all'; // 'all', 'popular', 'following', 'liked', 'saved'
+  String _activeFilter = 'all'; // 'all', 'popular', 'following', 'liked', 'saved', 'marketing'
   String? _selectedAuthor; // null means all authors
   String _sortBy = 'default'; // 'default', 'likes_desc', 'title_az'
+  bool _isAdSectionDismissed = false;
 
   @override
   void initState() {
@@ -101,6 +105,9 @@ class _HomePageState extends State<HomePage> {
         final savedIds = ApiService().savedPostIds;
         result = result.where((p) => savedIds.contains(p.id)).toList();
         break;
+      case 'marketing':
+        result = result.where((p) => p.isMarketing).toList();
+        break;
       case 'all':
       default:
         break;
@@ -144,6 +151,7 @@ class _HomePageState extends State<HomePage> {
     if (_activeFilter == 'following') parts.add('Following');
     if (_activeFilter == 'liked') parts.add('Liked by You');
     if (_activeFilter == 'saved') parts.add('Saved Pins');
+    if (_activeFilter == 'marketing') parts.add('Ads & Marketing');
     if (_selectedAuthor != null) parts.add('@$_selectedAuthor');
     if (_sortBy == 'title_az') parts.add('A-Z');
     if (_sortBy == 'likes_desc' && _activeFilter != 'popular') parts.add('Top Loves');
@@ -523,6 +531,15 @@ class _HomePageState extends State<HomePage> {
                 _applyFilters();
               },
             ),
+            const SizedBox(width: 8),
+            _buildQuickChip(
+              label: 'Ads 📢',
+              isSelected: _activeFilter == 'marketing',
+              onTap: () {
+                setState(() => _activeFilter = _activeFilter == 'marketing' ? 'all' : 'marketing');
+                _applyFilters();
+              },
+            ),
             if (_selectedAuthor != null) ...[
               const SizedBox(width: 8),
               _buildQuickChip(
@@ -598,6 +615,214 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ─── Compact Ad Section (Pinterest & Pixiv Style) ─────────────────────────
+
+  Widget _buildCompactAdSection() {
+    if (_isAdSectionDismissed) return const SizedBox.shrink();
+
+    final adPosts = ApiService().getMarketingPosts();
+    if (adPosts.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: "Sponsored" title + tiny dismiss button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: Text(
+                      'AD',
+                      style: GoogleFonts.inter(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFFB45309),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Promoted Showcase',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: () => setState(() => _isAdSectionDismissed = true),
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Hide',
+                        style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF94A3B8)),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(Icons.close_rounded, size: 12, color: Color(0xFF94A3B8)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Horizontal scroll of compact ad cards
+          SizedBox(
+            height: 72,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: adPosts.length,
+              separatorBuilder: (context, index) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final ad = adPosts[index];
+                return _buildCompactAdCard(ad);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactAdCard(Post post) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PinDetailPage(
+              post: post,
+              onLikeToggle: () => _handleLikeToggle(post),
+              onDelete: () => _handleDeletePost(post),
+              onEdit: () => _handleEditPost(post),
+            ),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 280,
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            // Media thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: 60,
+                height: 60,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Container(
+                        color: const Color(0xFF0F172A),
+                        child: post.isVideoPost
+                            ? buildVideoThumbnail(videoUrl: post.videoUrl)
+                            : buildSafeImage(post.imageUrl, fit: BoxFit.cover),
+                      ),
+                    ),
+                    if (post.isVideoPost)
+                      Positioned(
+                        bottom: 2,
+                        right: 2,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Icon(Icons.videocam_rounded, size: 10, color: Colors.white),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    post.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Promoted by @${post.author}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Text(
+                        post.link != null && post.link!.isNotEmpty ? 'Visit Link' : 'View Ad',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFFE60023),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(Icons.arrow_forward_rounded, size: 10, color: Color(0xFFE60023)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildHomeBody() {
     if (_isLoading) {
       return const Center(
@@ -618,6 +843,9 @@ class _HomePageState extends State<HomePage> {
         children: [
           // Quick Filter Chips Bar
           _buildQuickFilterChips(),
+
+          // Compact Ad Section (Pinterest & Pixiv Style)
+          _buildCompactAdSection(),
 
           // Active Filter Description Bar (if custom filtered)
           if (_hasActiveFilter)
@@ -820,6 +1048,26 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // Admin Dashboard Direct Button (Only shown if Administrator)
+          if (ApiService().isAdmin)
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: IconButton(
+                tooltip: 'Admin Content Management',
+                icon: const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFFDC2626), size: 20),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminContentPage()),
+                  );
+                },
+              ),
+            ),
           // Refresh Feed Button
           IconButton(
             tooltip: 'Refresh Feed',

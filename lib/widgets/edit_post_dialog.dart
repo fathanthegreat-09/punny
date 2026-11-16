@@ -245,6 +245,7 @@ class _EditPostDialogState extends State<EditPostDialog> {
         await ApiService().updatePost(
           id: widget.post.id,
           title: title,
+          category: widget.post.category,
           videoUrl: resolvedUrls.first,
           videoUrls: resolvedUrls,
         );
@@ -252,6 +253,7 @@ class _EditPostDialogState extends State<EditPostDialog> {
         await ApiService().updatePost(
           id: widget.post.id,
           title: title,
+          category: widget.post.category,
           imageUrl: resolvedUrls.first,
           imageUrls: resolvedUrls,
         );
@@ -397,7 +399,7 @@ class _EditPostDialogState extends State<EditPostDialog> {
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: _mediaItems.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 10),
+                          separatorBuilder: (context, index) => const SizedBox(width: 10),
                           itemBuilder: (context, idx) {
                             final item = _mediaItems[idx];
                             final isSel = idx == _activeMediaIndex;

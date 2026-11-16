@@ -625,14 +625,36 @@ app.delete('/api/posts/:id', async (req, res) => {
 
     const deletedPost = rows[0];
 
-    // Clean up uploaded file if present
-    if (deletedPost.imageUrl && deletedPost.imageUrl.startsWith('/uploads/')) {
-      const localFile = path.join(__dirname, deletedPost.imageUrl);
-      if (fs.existsSync(localFile)) {
-        try {
-          fs.unlinkSync(localFile);
-        } catch (_) {}
+    // Helper to safely remove uploaded files from disk
+    const tryUnlink = (url) => {
+      if (typeof url === 'string' && url.startsWith('/uploads/')) {
+        const localFile = path.join(__dirname, url);
+        if (fs.existsSync(localFile)) {
+          try {
+            fs.unlinkSync(localFile);
+          } catch (_) {}
+        }
       }
+    };
+
+    // Clean up uploaded image & video files if present
+    tryUnlink(deletedPost.imageUrl);
+    tryUnlink(deletedPost.videoUrl);
+
+    let parsedImgs = [];
+    try {
+      parsedImgs = typeof deletedPost.imageUrls === 'string' ? JSON.parse(deletedPost.imageUrls) : deletedPost.imageUrls;
+    } catch (_) {}
+    if (Array.isArray(parsedImgs)) {
+      parsedImgs.forEach(tryUnlink);
+    }
+
+    let parsedVids = [];
+    try {
+      parsedVids = typeof deletedPost.videoUrls === 'string' ? JSON.parse(deletedPost.videoUrls) : deletedPost.videoUrls;
+    } catch (_) {}
+    if (Array.isArray(parsedVids)) {
+      parsedVids.forEach(tryUnlink);
     }
 
     await db.query('DELETE FROM posts WHERE id = ?', [id]);

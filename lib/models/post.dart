@@ -55,6 +55,10 @@ class Post {
   bool get isMultiImage => imageUrls.length > 1;
   bool get isMultiVideo => videoUrls.length > 1;
   bool get isVideoPost => (videoUrl != null && videoUrl!.isNotEmpty) || videoUrls.isNotEmpty;
+  bool get isMarketing =>
+      (category != null &&
+          (category!.toLowerCase().contains('ad') ||
+              category!.toLowerCase().contains('marketing')));
 
   bool isLikedBy(String username) {
     return likes.contains(username);

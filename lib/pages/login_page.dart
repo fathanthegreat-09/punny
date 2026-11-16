@@ -222,6 +222,26 @@ class _LoginPageState extends State<LoginPage> {
                               style: TextStyle(fontSize: 16, color: Colors.white),
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          // Quick Admin Login Demo Button
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFDC2626),
+                              side: const BorderSide(color: Color(0xFFFECACA)),
+                              backgroundColor: const Color(0xFFFEF2F2),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon: const Icon(Icons.admin_panel_settings_rounded, size: 18),
+                            label: const Text('Sign In as Administrator'),
+                            onPressed: () {
+                              _usernameController.text = 'admin';
+                              _passwordController.text = 'admin123';
+                              _handleSignIn();
+                            },
+                          ),
                           const SizedBox(height: 16),
                           Wrap(
                             alignment: WrapAlignment.center,

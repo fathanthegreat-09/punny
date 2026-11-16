@@ -277,6 +277,31 @@ class _PinCardState extends State<PinCard> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (widget.post.isMarketing)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF59E0B).withValues(alpha: 0.95),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.campaign_rounded, size: 11, color: Colors.white),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Ad',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         if (isAuthor)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -437,7 +462,7 @@ class _PinCardState extends State<PinCard> {
                                 ],
                               ),
                             ),
-                          if (isAuthor) ...[
+                          if (isAuthor)
                             const PopupMenuItem(
                               value: 'edit',
                               child: Row(
@@ -448,17 +473,20 @@ class _PinCardState extends State<PinCard> {
                                 ],
                               ),
                             ),
-                            const PopupMenuItem(
+                          if (isAuthor || ApiService().isAdmin)
+                            PopupMenuItem(
                               value: 'delete',
                               child: Row(
                                 children: [
-                                  Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                  SizedBox(width: 10),
-                                  Text('Delete Pin', style: TextStyle(color: Colors.redAccent)),
+                                  const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    (!isAuthor && ApiService().isAdmin) ? 'Delete Pin (Admin)' : 'Delete Pin',
+                                    style: const TextStyle(color: Colors.redAccent),
+                                  ),
                                 ],
                               ),
                             ),
-                          ],
                         ],
                       ),
                     ],

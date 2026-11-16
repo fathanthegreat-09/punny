@@ -42,6 +42,7 @@ class _AddPageState extends State<AddPage> {
     'Quotes',
     'Illustration',
     'Video',
+    'Ads & Marketing',
   ];
 
   @override
@@ -803,7 +804,7 @@ class _AddPageState extends State<AddPage> {
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _selectedMedia.length + 2, // +2: Add Image, Add Video
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            separatorBuilder: (context, index) => const SizedBox(width: 10),
             itemBuilder: (context, index) {
               // Add More Image button
               if (index == _selectedMedia.length) {
@@ -1035,6 +1036,33 @@ class _AddPageState extends State<AddPage> {
               );
             }).toList(),
           ),
+          if (_selectedCategory == 'Ads & Marketing') ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.campaign_rounded, color: Color(0xFFD97706), size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Marketing Pin: This post will be highlighted in the compact Sponsored showcase (Pinterest/Pixiv style) on the home feed.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: const Color(0xFF92400E),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 18),
 
           _fieldLabel('Description (optional)'),

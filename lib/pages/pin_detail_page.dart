@@ -348,7 +348,7 @@ class _PinDetailPageState extends State<PinDetailPage> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: totalCount,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              separatorBuilder: (context, index) => const SizedBox(width: 8),
               itemBuilder: (context, idx) {
                 final isSel = idx == _currentImageIndex;
                 final itemUrl = mediaList[idx];
@@ -438,10 +438,12 @@ class _PinDetailPageState extends State<PinDetailPage> {
               ),
             ),
             const SizedBox(width: 8),
+          ],
+          if (isAuthor || ApiService().isAdmin) ...[
             CircleAvatar(
               backgroundColor: Colors.white,
               child: IconButton(
-                tooltip: 'Delete Pin',
+                tooltip: (!isAuthor && ApiService().isAdmin) ? 'Delete Pin (Admin)' : 'Delete Pin',
                 icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                 onPressed: _confirmDelete,
               ),
@@ -584,22 +586,54 @@ class _PinDetailPageState extends State<PinDetailPage> {
           ),
           const SizedBox(height: 20),
 
-          // Category Badge if present
-          if (_currentPost.category != null && _currentPost.category!.isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEEF2FF),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _currentPost.category!,
-                style: GoogleFonts.inter(
-                  color: const Color(0xFF4F46E5),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                ),
-              ),
+          // Category Badge & Sponsored Tag if present
+          if ((_currentPost.category != null && _currentPost.category!.isNotEmpty) || _currentPost.isMarketing) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_currentPost.category != null && _currentPost.category!.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEEF2FF),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _currentPost.category!,
+                      style: GoogleFonts.inter(
+                        color: const Color(0xFF4F46E5),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                if (_currentPost.isMarketing) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFDE68A)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.campaign_rounded, size: 14, color: Color(0xFFD97706)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Sponsored',
+                          style: GoogleFonts.inter(
+                            color: const Color(0xFFB45309),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
             const SizedBox(height: 8),
           ],

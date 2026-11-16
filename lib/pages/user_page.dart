@@ -5,6 +5,7 @@ import '../models/post.dart';
 import '../services/api_service.dart';
 import '../widgets/edit_post_dialog.dart';
 import '../widgets/pin_card.dart';
+import 'admin_content_page.dart';
 
 class UserPage extends StatefulWidget {
   final VoidCallback? onDataChanged;
@@ -309,6 +310,43 @@ class _UserPageState extends State<UserPage> {
                         fontSize: 14,
                       ),
                     ),
+                    if (ApiService().isAdmin) ...[
+                      const SizedBox(height: 12),
+                      InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const AdminContentPage()),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFFCA5A5)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFFDC2626), size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Open Admin Content Management',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFFB91C1C),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Color(0xFFB91C1C)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 20),
 
                     // Stats Bar
